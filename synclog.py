@@ -110,6 +110,7 @@ class TenhouSCCLog(TenhouLog):
                 point = sinfo[sinfo.find("(") + 1:sinfo.find(")")].strip()
                 d["players"].append(player)
                 d["points"].append(point)
+            assert d["playernum"] == len(d["players"])
             documents.append(d)
         return documents
 
@@ -153,6 +154,7 @@ class TenhouSCBLog(TenhouLog):
                 point = sinfo[sinfo.find("(") + 1:sinfo.find(")")].strip()
                 d["players"].append(player)
                 d["points"].append(point)
+            assert d["playernum"] == len(d["players"])
             documents.append(d)
         return documents
 
@@ -161,9 +163,11 @@ ts: List[TenhouLog] = [TenhouSCBLog(), TenhouSCCLog()]
 
 
 async def main():
+    print("Start syncing")
     curdate = datetime.datetime.now()
-    for t in ts:
-        await t.fetch(curdate)
+    for i in range(12):
+        for t in ts:
+            await t.fetch(curdate - datetime.timedelta(hours=i))
 
 
 async def sync_old():
