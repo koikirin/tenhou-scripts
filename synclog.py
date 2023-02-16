@@ -214,9 +214,12 @@ t = TenhouSCBLog()
 
 async def main():
     print("Start syncing")
-    curdate = datetime.datetime.now()
-    synclog = db["synclog"].find_one()
-    if not synclog:
+    curdate = datetime.datetime.now(_tz9)
+    cursor = db["synclog"].find().sort("$natural", pymongo.DESCENDING).limit(1)
+
+    for synclog in cursor:
+        break
+    else:
         ts = int((curdate - datetime.timedelta(days=3)).timestamp())
         synclog = {"start": ts, "end": ts}
     enddate = await sync_time_region(synclog["end"])
@@ -226,6 +229,9 @@ async def main():
             "start": synclog["start"],
             "end": int(enddate.timestamp())
         })
+        print("Finish syncing")
+    else:
+        print("Fail syncing")
 
 
 import zoneinfo
