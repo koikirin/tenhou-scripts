@@ -26,7 +26,11 @@ def convert_playtype(playtype: str) -> dict:
         ret["playernum"] = 3
     elif "四" in playtype:
         ret["playernum"] = 4
-    if "特" in playtype:
+    if "般" in playtype:
+        ret["playerlevel"] = 0
+    elif "上" in playtype:
+        ret["playerlevel"] = 1
+    elif "特" in playtype:
         ret["playerlevel"] = 2
     elif "鳳" in playtype:
         ret["playerlevel"] = 3
