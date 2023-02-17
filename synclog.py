@@ -69,6 +69,7 @@ class TenhouLog:
             )
             return True
         except Exception as e:
+            print(repr(e))
             print(f"[{type(self).__name__}] Failed to fetch {timep}:{new}.")
             return False
         print(
@@ -217,8 +218,8 @@ t = TenhouSCBLog()
 
 
 async def main():
-    print("Start syncing")
     curdate = datetime.datetime.now(_tz9)
+    print(f"[Start] {curdate}")
     cursor = db["synclog"].find().sort("$natural", pymongo.DESCENDING).limit(1)
 
     for synclog in cursor:
@@ -233,9 +234,9 @@ async def main():
             "start": synclog["start"],
             "end": int(enddate.timestamp())
         })
-        print("Finish syncing")
+        print("[Finish]")
     else:
-        print("Fail syncing")
+        print("[Fail]")
 
 
 import zoneinfo
@@ -255,6 +256,7 @@ async def sync_time_region(start: int, end: int = 0):
                 if not await t.fetch(startdate, new=True):
                     return startdate - datetime.timedelta(hours=1)
                 startdate += datetime.timedelta(hours=1)
+            await t.fetch(startdate, new=True)
             break
         else:
             if not await t.fetch(startdate, new=False):
