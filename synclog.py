@@ -57,7 +57,8 @@ class TenhouLog:
         timepat = f"{timep.year}{timep.month:02}{timep.day:02}{timep.hour:02}"
         try:
             documents = await self._fetch(timepat, new=new)
-            db["matches"].insert_many(documents, ordered=False)
+            if documents:
+                db["matches"].insert_many(documents, ordered=False)
         except pymongo.errors.BulkWriteError as e:
             assert isinstance(e.details, dict)
             errd = {}
@@ -186,10 +187,13 @@ class TenhouSCBLog(TenhouLog):
                 continue
             starttime, during, playtype, info = line.strip().split("|",
                                                                    maxsplit=3)
+            starttime = convert_starttime(timepat, starttime.strip())
+            during = int(during.strip())
             d = {
-                "starttime": convert_starttime(timepat, starttime.strip()),
+                "starttime": starttime,
+                "endtime": starttime + 60 * during,
                 "sctype": self._sctype,
-                "during": int(during.strip()),
+                "during": during,
                 "players": [],
                 "points": [],
                 **convert_playtype(playtype)
