@@ -1,9 +1,6 @@
 import asyncio
 import datetime
 import gzip
-import sys
-import time
-from typing import List
 
 import httpx
 import pymongo
