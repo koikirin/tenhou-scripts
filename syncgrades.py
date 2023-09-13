@@ -57,12 +57,7 @@ async def update_gradechanges():
         print(f'{e}')
     print(f'Finished. cost {time.time() - curtime} s')
 
-async def main():
-    while True:
-        await update_gradechanges()
-        await asyncio.sleep(60 * 60)
-
 try:
-    asyncio.run(main())
+    asyncio.run(update_gradechanges())
 except KeyboardInterrupt:
     pass
