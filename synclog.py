@@ -1,12 +1,16 @@
 import asyncio
 import datetime
 import gzip
+import json
 
 import httpx
 import pymongo
 import pymongo.errors
 
-db = pymongo.MongoClient().get_database("tenhou")
+with open("config.json") as f:
+    config = json.load(f)
+
+db = pymongo.MongoClient(config["database"]).get_database("tenhou")
 
 
 def convert_starttime(timepat: str, minute: str) -> int:

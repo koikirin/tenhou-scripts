@@ -8,7 +8,10 @@ import httpx
 import pymongo
 import pymongo.errors
 
-db = pymongo.MongoClient().get_database("tenhou")
+with open("config.json") as f:
+    config = json.load(f)
+
+db = pymongo.MongoClient(config["database"]).get_database("tenhou")
 
 async def fetch(username):
     async with httpx.AsyncClient() as sess:
