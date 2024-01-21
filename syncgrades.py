@@ -63,7 +63,7 @@ async def update_gradechanges():
 async def main():
     while True:
         await update_gradechanges()
-        await asyncio.sleep(60 * 60)
+        await asyncio.sleep(60 * 60 * 6)
 
 try:
     asyncio.run(main())
