@@ -2,6 +2,7 @@ import asyncio
 import datetime
 import gzip
 import json
+import sys
 
 import httpx
 import pymongo
@@ -253,7 +254,7 @@ _tz8 = zoneinfo.ZoneInfo("Asia/Shanghai")
 async def sync_time_region(start: int, end: int = 0):
     curdate = datetime.datetime.now(_tz9) - datetime.timedelta(hours=1)
     # If today, calc by hour, otherwise, calc by day
-    startdate = datetime.datetime.fromtimestamp(start, tz=_tz9)
+    startdate = datetime.datetime.fromtimestamp(start, tz=_tz9) - datetime.timedelta(hours=1)
     enddate = datetime.datetime.fromtimestamp(end, tz=_tz9) if end else curdate
     while startdate < enddate:
         if curdate.date() == startdate.date():
@@ -274,5 +275,8 @@ async def sync_time_region(start: int, end: int = 0):
                                           tzinfo=_tz9)
     return enddate
 
-
-asyncio.run(main())
+if len(sys.argv) >= 2 and sys.argv[-2] == "sync":
+    asyncio.run(sync_time_region(int(sys.argv[-1])))
+else:
+    asyncio.run(main())
+    
