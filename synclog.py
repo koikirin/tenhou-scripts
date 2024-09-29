@@ -3,6 +3,7 @@ import datetime
 import gzip
 import json
 import sys
+from typing import List
 
 import httpx
 import pymongo
@@ -12,6 +13,11 @@ with open("config.json") as f:
     config = json.load(f)
 
 db = pymongo.MongoClient(config["database"]).get_database("tenhou")
+
+import zoneinfo
+
+_tz9 = zoneinfo.ZoneInfo("Asia/Tokyo")
+_tz8 = zoneinfo.ZoneInfo("Asia/Shanghai")
 
 
 def convert_starttime(timepat: str, minute: str) -> int:
@@ -36,6 +42,8 @@ def convert_playtype(playtype: str) -> dict:
         ret["playerlevel"] = 2
     elif "鳳" in playtype:
         ret["playerlevel"] = 3
+    elif "Ｗ" in playtype:
+        ret["playerlevel"] = 9
     if "東" in playtype:
         ret["playlength"] = 1
     elif "南" in playtype:
@@ -46,6 +54,8 @@ def convert_playtype(playtype: str) -> dict:
         ret["akaari"] = 1
     if "速" in playtype:
         ret["rapid"] = 1
+    if "祝" in playtype:
+        ret["shuugi"] = 1
     return ret
 
 
@@ -72,6 +82,7 @@ class TenhouLog:
             )
             return True
         except Exception as e:
+            raise e
             print(repr(e))
             print(f"[{type(self).__name__}] Failed to fetch {timep}:{new}.")
             return False
@@ -79,6 +90,9 @@ class TenhouLog:
             f"[{type(self).__name__}] Successfully sync {timep}:{new} with {len(documents)} documents"
         )
         return True
+
+    async def sync(self, start: int, end: int = 0) -> datetime.datetime:
+        raise NotImplemented
 
 
 # class TenhouSCCLog(TenhouLog):
@@ -127,7 +141,6 @@ class TenhouLog:
 
 class TenhouSCBLog(TenhouLog):
     def __init__(self) -> None:
-        self._current_version = datetime.datetime(2022, 12, 10, 0)
         self._sctype = "b"
 
     def _fetch(self, timepat: str, new: bool):
@@ -217,66 +230,176 @@ class TenhouSCBLog(TenhouLog):
                 dd[d["_id"]] = 1
             documents.append(d)
         return documents
+    
+    async def sync(self, start: int, end: int = 0):
+        curdate = datetime.datetime.now(_tz9) - datetime.timedelta(hours=1)
+        # If today, calc by hour, otherwise, calc by day
+        startdate = datetime.datetime.fromtimestamp(start, tz=_tz9) - datetime.timedelta(hours=1)
+        enddate = datetime.datetime.fromtimestamp(end, tz=_tz9) if end else curdate
+        while startdate < enddate:
+            if curdate.date() == startdate.date():
+                while startdate < curdate:
+                    if not await self.fetch(startdate, new=True):
+                        return startdate - datetime.timedelta(hours=1)
+                    startdate += datetime.timedelta(hours=1)
+                await self.fetch(startdate, new=True)
+                break
+            else:
+                if not await self.fetch(startdate, new=False):
+                    return False
 
+                startdate += datetime.timedelta(days=1)
+                startdate = datetime.datetime(year=startdate.year,
+                                            month=startdate.month,
+                                            day=startdate.day,
+                                            tzinfo=_tz9)
+        return enddate
+    
 
-# ts: List[TenhouLog] = [TenhouSCBLog()]
-t = TenhouSCBLog()
+class TenhouSCALog(TenhouLog):
+    def __init__(self) -> None:
+        self._sctype = "a"
 
+    def _fetch(self, timepat: str, new: bool):
+        if new:
+            return self._fetch_new(timepat)
+        else:
+            return self._fetch_old(timepat)
+
+    async def _fetch_new(self, timepat: str):
+        url = f"https://tenhou.net/sc/raw/dat/sca{timepat[:8]}.log.gz"
+        print(url)
+        headers = {
+            "Referer":
+            "https://tenhou.net/sc/raw/",
+            "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
+        }
+        async with httpx.AsyncClient(headers=headers) as client:
+            resp = await client.get(url, headers=headers)
+            # Raise if the timepat too old ?
+            if resp.status_code == 404:
+                return []
+            resp.raise_for_status()
+            data = resp.read()
+            data = gzip.decompress(data)
+            data = data.decode("utf-8")
+        return self._process(timepat, data)
+
+    async def _fetch_old(self, timepat: str):
+        timepat = timepat[:8]
+        url = f"https://tenhou.net/sc/raw/dat/{timepat[:4]}/sca{timepat[:8]}.log.gz"
+        print(url)
+        headers = {
+            "Referer":
+            "https://tenhou.net/sc/raw/",
+            "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
+        }
+        async with httpx.AsyncClient(headers=headers) as client:
+            resp = await client.get(url, headers=headers)
+            if resp.status_code == 404:
+                print("Switch to fetch recent logs")
+                return await self._fetch_new(timepat)
+            resp.raise_for_status()
+            data = resp.read()
+            data = gzip.decompress(data)
+            data = data.decode("utf-8")
+        return self._process(timepat, data)
+
+    def _process(self, timepat: str, data: str):
+        documents = []
+        dd = {}
+        for line in data.split("\n"):
+            if not line.strip():
+                continue
+            lobby, starttime, playtype, info = line.strip().split("|",
+                                                                   maxsplit=3)
+            starttime = convert_starttime(timepat, starttime.strip())
+            d = {
+                "starttime": starttime,
+                "sctype": self._sctype,
+                "lobby": int(lobby[1:]),
+                "rawlobby": lobby,
+                "players": [],
+                "points": [],
+                **convert_playtype(playtype)
+            }
+            d_player, d_point = "", ""
+            for sinfo in info.split():
+                player = sinfo[:sinfo.find("(")].strip()
+                point = sinfo[sinfo.find("(") + 1:sinfo.find(")")].strip()
+                shuugi = None
+                if "," in point:
+                    point, shuugi = point.split(",")
+                d["players"].append(player)
+                d["points"].append(point)
+                if shuugi:
+                    d.setdefault("shuugis", []).append(shuugi[:-1])
+                if not d_player and player != "NoName":
+                    d_player = player
+                elif not d_point:
+                    d_point = point
+            assert d["playernum"] == len(d["players"])
+
+            d["_id"] = f"{self._sctype}.{d['starttime']}.{d['rawlobby']}.{d_player if d_player else d_point}"
+            if d["_id"] in dd:
+                print("Dup key", d["_id"])
+            else:
+                dd[d["_id"]] = 1
+            documents.append(d)
+        return documents
+
+    async def sync(self, start: int, end: int = 0):
+        curdate = datetime.datetime.now(_tz9) - datetime.timedelta(hours=1)
+        # If today, calc by hour, otherwise, calc by day
+        startdate = datetime.datetime.fromtimestamp(start, tz=_tz9) - datetime.timedelta(hours=1)
+        enddate = datetime.datetime.fromtimestamp(end, tz=_tz9) if end else curdate
+        while startdate < enddate:
+            if curdate.date() == startdate.date():
+                await self.fetch(startdate, new=True)
+                break
+            else:
+                if not await self.fetch(startdate, new=False):
+                    return False
+
+                startdate += datetime.timedelta(days=1)
+                startdate = datetime.datetime(year=startdate.year,
+                                            month=startdate.month,
+                                            day=startdate.day,
+                                            tzinfo=_tz9)
+        return enddate
+    
+
+providers: List[TenhouLog] = [TenhouSCBLog(), TenhouSCALog()]
 
 async def main():
     curdate = datetime.datetime.now(_tz9)
     print(f"[Start] {curdate}")
-    cursor = db["synclog"].find().sort("$natural", pymongo.DESCENDING).limit(1)
+    for t in providers:
+        cursor = db["synclog"].find({
+            "sctype": t._sctype,
+        }).sort("$natural", pymongo.DESCENDING).limit(1)
 
-    for synclog in cursor:
-        break
-    else:
-        ts = int((curdate - datetime.timedelta(days=3)).timestamp())
-        synclog = {"start": ts, "end": ts}
-    enddate = await sync_time_region(synclog["end"])
-
-    if enddate:
-        db["synclog"].insert_one({
-            "start": synclog["start"],
-            "end": int(enddate.timestamp())
-        })
-        print("[Finish]")
-    else:
-        print("[Fail]")
-
-
-import zoneinfo
-
-_tz9 = zoneinfo.ZoneInfo("Asia/Tokyo")
-_tz8 = zoneinfo.ZoneInfo("Asia/Shanghai")
-
-
-async def sync_time_region(start: int, end: int = 0):
-    curdate = datetime.datetime.now(_tz9) - datetime.timedelta(hours=1)
-    # If today, calc by hour, otherwise, calc by day
-    startdate = datetime.datetime.fromtimestamp(start, tz=_tz9) - datetime.timedelta(hours=1)
-    enddate = datetime.datetime.fromtimestamp(end, tz=_tz9) if end else curdate
-    while startdate < enddate:
-        if curdate.date() == startdate.date():
-            while startdate < curdate:
-                if not await t.fetch(startdate, new=True):
-                    return startdate - datetime.timedelta(hours=1)
-                startdate += datetime.timedelta(hours=1)
-            await t.fetch(startdate, new=True)
+        for synclog in cursor:
             break
         else:
-            if not await t.fetch(startdate, new=False):
-                return False
+            ts = int((curdate - datetime.timedelta(days=3)).timestamp())
+            synclog = {"start": ts, "end": ts}
+        enddate = await t.sync(synclog["end"])
 
-            startdate += datetime.timedelta(days=1)
-            startdate = datetime.datetime(year=startdate.year,
-                                          month=startdate.month,
-                                          day=startdate.day,
-                                          tzinfo=_tz9)
-    return enddate
+        if enddate:
+            db["synclog"].insert_one({
+                "start": synclog["start"],
+                "end": int(enddate.timestamp()),
+                "sctype": t._sctype,
+            })
+            print("[Finish]")
+        else:
+            print("[Fail]")
 
-if len(sys.argv) >= 2 and sys.argv[-2] == "sync":
-    asyncio.run(sync_time_region(int(sys.argv[-1])))
+if len(sys.argv) >= 3 and sys.argv[-3] == "sync":
+    asyncio.run(providers[int(sys.argv[-2])].sync(int(sys.argv[-1])))
 else:
     asyncio.run(main())
     
