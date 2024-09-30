@@ -197,6 +197,7 @@ class TenhouSCBLog(TenhouLog):
     def _process(self, timepat: str, data: str):
         documents = []
         dd = {}
+        dup = False
         for line in data.split("\n"):
             if not line.strip():
                 continue
@@ -225,10 +226,12 @@ class TenhouSCBLog(TenhouLog):
 
             d["_id"] = f"{self._sctype}.{d['starttime']}.{d['during']}.{d_player}"
             if d["_id"] in dd:
-                print("Dup key", d["_id"])
+                # print("Dup key", d["_id"])
+                dup = True
             else:
                 dd[d["_id"]] = 1
             documents.append(d)
+        if dup: print('Duplicate Key!')
         return documents
     
     async def sync(self, start: int, end: int = 0):
@@ -310,11 +313,13 @@ class TenhouSCALog(TenhouLog):
     def _process(self, timepat: str, data: str):
         documents = []
         dd = {}
+        dup = False
         for line in data.split("\n"):
             if not line.strip():
                 continue
             lobby, starttime, playtype, info = line.strip().split("|",
                                                                    maxsplit=3)
+            lobby = lobby.strip()
             starttime = convert_starttime(timepat, starttime.strip())
             d = {
                 "starttime": starttime,
@@ -344,10 +349,12 @@ class TenhouSCALog(TenhouLog):
 
             d["_id"] = f"{self._sctype}.{d['starttime']}.{d['rawlobby']}.{d_player if d_player else d_point}"
             if d["_id"] in dd:
-                print("Dup key", d["_id"])
+                # print("Dup key", d["_id"])
+                dup = True
             else:
                 dd[d["_id"]] = 1
             documents.append(d)
+        if dup: print('Duplicate Key!')
         return documents
 
     async def sync(self, start: int, end: int = 0):
@@ -394,9 +401,9 @@ async def main():
                 "end": int(enddate.timestamp()),
                 "sctype": t._sctype,
             })
-            print("[Finish]")
+            print("[Finish]", t._sctype)
         else:
-            print("[Fail]")
+            print("[Fail]", t._sctype)
 
 if len(sys.argv) >= 3 and sys.argv[-3] == "sync":
     asyncio.run(providers[int(sys.argv[-2])].sync(int(sys.argv[-1])))
