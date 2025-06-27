@@ -82,7 +82,8 @@ class TenhouLog:
             )
             return True
         except Exception as e:
-            raise e
+            print(f"[{type(self).__name__}] Failed to fetch {timep}:{new}.")
+            raise e from None
             print(repr(e))
             print(f"[{type(self).__name__}] Failed to fetch {timep}:{new}.")
             return False
@@ -142,6 +143,7 @@ class TenhouLog:
 class TenhouSCBLog(TenhouLog):
     def __init__(self) -> None:
         self._sctype = "b"
+        self.client = httpx.AsyncClient(timeout=8.0)
 
     def _fetch(self, timepat: str, new: bool):
         if new:
@@ -158,7 +160,7 @@ class TenhouSCBLog(TenhouLog):
             "User-Agent":
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
         }
-        async with httpx.AsyncClient(headers=headers) as client:
+        async with self.client as client:
             resp = await client.get(url, headers=headers)
             # Raise if the timepat too old ?
             if resp.status_code == 404:
@@ -179,7 +181,7 @@ class TenhouSCBLog(TenhouLog):
             "User-Agent":
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
         }
-        async with httpx.AsyncClient(headers=headers) as client:
+        async with self.client as client:
             resp = await client.get(url, headers=headers)
             if resp.status_code == 404:
                 print("Switch to fetch recent logs")
@@ -262,6 +264,7 @@ class TenhouSCBLog(TenhouLog):
 class TenhouSCALog(TenhouLog):
     def __init__(self) -> None:
         self._sctype = "a"
+        self.client = httpx.AsyncClient(timeout=8.0)
 
     def _fetch(self, timepat: str, new: bool):
         if new:
@@ -278,7 +281,7 @@ class TenhouSCALog(TenhouLog):
             "User-Agent":
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
         }
-        async with httpx.AsyncClient(headers=headers) as client:
+        async with self.client as client:
             resp = await client.get(url, headers=headers)
             # Raise if the timepat too old ?
             if resp.status_code == 404:
@@ -299,7 +302,7 @@ class TenhouSCALog(TenhouLog):
             "User-Agent":
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
         }
-        async with httpx.AsyncClient(headers=headers) as client:
+        async with self.client as client:
             resp = await client.get(url, headers=headers)
             if resp.status_code == 404:
                 print("Switch to fetch recent logs")
