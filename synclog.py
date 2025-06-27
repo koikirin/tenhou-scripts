@@ -62,6 +62,12 @@ def convert_playtype(playtype: str) -> dict:
 class TenhouLog:
     _sctype: str
 
+    def __init__(self):
+        self.client = httpx.AsyncClient(timeout=8.0)
+
+    async def close(self):
+        await self.client.aclose()
+
     async def _fetch(self, timepat: str, new: bool):
         raise NotImplementedError
 
@@ -142,8 +148,8 @@ class TenhouLog:
 
 class TenhouSCBLog(TenhouLog):
     def __init__(self) -> None:
+        super().__init__()
         self._sctype = "b"
-        self.client = httpx.AsyncClient(timeout=8.0)
 
     def _fetch(self, timepat: str, new: bool):
         if new:
@@ -160,15 +166,14 @@ class TenhouSCBLog(TenhouLog):
             "User-Agent":
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
         }
-        async with self.client as client:
-            resp = await client.get(url, headers=headers)
-            # Raise if the timepat too old ?
-            if resp.status_code == 404:
-                return []
-            resp.raise_for_status()
-            data = resp.read()
-            data = gzip.decompress(data)
-            data = data.decode("utf-8")
+        resp = await self.client.get(url, headers=headers)
+        # Raise if the timepat too old ?
+        if resp.status_code == 404:
+            return []
+        resp.raise_for_status()
+        data = resp.read()
+        data = gzip.decompress(data)
+        data = data.decode("utf-8")
         return self._process(timepat, data)
 
     async def _fetch_old(self, timepat: str):
@@ -181,19 +186,18 @@ class TenhouSCBLog(TenhouLog):
             "User-Agent":
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
         }
-        async with self.client as client:
-            resp = await client.get(url, headers=headers)
-            if resp.status_code == 404:
-                print("Switch to fetch recent logs")
-                ret = []
-                for i in range(24):
-                    tpat = f"{timepat}{i:02}"
-                    ret.extend(await self._fetch_new(tpat))
-                return ret
-            resp.raise_for_status()
-            data = resp.read()
-            data = gzip.decompress(data)
-            data = data.decode("utf-8")
+        resp = await self.client.get(url, headers=headers)
+        if resp.status_code == 404:
+            print("Switch to fetch recent logs")
+            ret = []
+            for i in range(24):
+                tpat = f"{timepat}{i:02}"
+                ret.extend(await self._fetch_new(tpat))
+            return ret
+        resp.raise_for_status()
+        data = resp.read()
+        data = gzip.decompress(data)
+        data = data.decode("utf-8")
         return self._process(timepat, data)
 
     def _process(self, timepat: str, data: str):
@@ -263,8 +267,8 @@ class TenhouSCBLog(TenhouLog):
 
 class TenhouSCALog(TenhouLog):
     def __init__(self) -> None:
+        super().__init__()
         self._sctype = "a"
-        self.client = httpx.AsyncClient(timeout=8.0)
 
     def _fetch(self, timepat: str, new: bool):
         if new:
@@ -281,15 +285,14 @@ class TenhouSCALog(TenhouLog):
             "User-Agent":
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
         }
-        async with self.client as client:
-            resp = await client.get(url, headers=headers)
-            # Raise if the timepat too old ?
-            if resp.status_code == 404:
-                return []
-            resp.raise_for_status()
-            data = resp.read()
-            data = gzip.decompress(data)
-            data = data.decode("utf-8")
+        resp = await self.client.get(url, headers=headers)
+        # Raise if the timepat too old ?
+        if resp.status_code == 404:
+            return []
+        resp.raise_for_status()
+        data = resp.read()
+        data = gzip.decompress(data)
+        data = data.decode("utf-8")
         return self._process(timepat, data)
 
     async def _fetch_old(self, timepat: str):
@@ -302,15 +305,14 @@ class TenhouSCALog(TenhouLog):
             "User-Agent":
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"
         }
-        async with self.client as client:
-            resp = await client.get(url, headers=headers)
-            if resp.status_code == 404:
-                print("Switch to fetch recent logs")
-                return await self._fetch_new(timepat)
-            resp.raise_for_status()
-            data = resp.read()
-            data = gzip.decompress(data)
-            data = data.decode("utf-8")
+        resp = await self.client.get(url, headers=headers)
+        if resp.status_code == 404:
+            print("Switch to fetch recent logs")
+            return await self._fetch_new(timepat)
+        resp.raise_for_status()
+        data = resp.read()
+        data = gzip.decompress(data)
+        data = data.decode("utf-8")
         return self._process(timepat, data)
 
     def _process(self, timepat: str, data: str):
@@ -407,6 +409,8 @@ async def main():
             print("[Finish]", t._sctype)
         else:
             print("[Fail]", t._sctype)
+        
+        await t.close()
 
 if len(sys.argv) >= 3 and sys.argv[-3] == "sync":
     asyncio.run(providers[int(sys.argv[-2])].sync(int(sys.argv[-1])))
